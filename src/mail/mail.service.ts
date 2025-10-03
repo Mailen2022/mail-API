@@ -50,8 +50,9 @@ export class MailService {
 
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
+          // FIX 1: Manejo seguro del posible error nulo.
           const errorMessages = uploadErrors
-            .map((e) => e.error.message)
+            .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
             .join(', ');
           console.error(
             `Error subiendo archivos para ${fieldName}:`,
@@ -62,11 +63,15 @@ export class MailService {
           );
         }
 
-        return uploadResults.map((result) => {
-          return supabaseClient.storage
-            .from(bucketName)
-            .getPublicUrl(result.data.path).data.publicUrl;
-        });
+        // FIX 2: Filtramos para asegurarnos de que 'result.data' no es nulo antes de mapear.
+        return uploadResults
+          .filter((result) => result.data) // Solo procesamos resultados con datos.
+          .map((result) => {
+            // Gracias al filtro anterior, TypeScript ahora sabe que result.data no es nulo aquí.
+            return supabaseClient.storage
+              .from(bucketName)
+              .getPublicUrl(result.data.path).data.publicUrl;
+          });
       };
 
       const uploadTasks = Object.keys(files).map((fieldName) =>
@@ -129,11 +134,10 @@ export class MailService {
   ) {
     console.log('Servicio: Procesando solicitud de onboarding KYC...');
     const supabaseClient = this.supabaseService.getClient();
-    const bucketName = 'kyc-documentos-usuarios'; // Bucket de destino para este formulario.
+    const bucketName = 'kyc-documentos-usuarios';
     const fileUrls: { [key: string]: string[] } = {};
 
     try {
-      // Reutilizamos la misma función auxiliar para subir archivos.
       const uploadMultipleFiles = async (
         fieldName: string,
         fileArray: Express.Multer.File[],
@@ -151,8 +155,9 @@ export class MailService {
 
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
+          // FIX 3: Manejo seguro del posible error nulo.
           const errorMessages = uploadErrors
-            .map((e) => e.error.message)
+            .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
             .join(', ');
           console.error(
             `Error subiendo archivos para ${fieldName}:`,
@@ -163,14 +168,17 @@ export class MailService {
           );
         }
 
-        return uploadResults.map((result) => {
-          return supabaseClient.storage
-            .from(bucketName)
-            .getPublicUrl(result.data.path).data.publicUrl;
-        });
+        // FIX 4: Filtramos para asegurarnos de que 'result.data' no es nulo antes de mapear.
+        return uploadResults
+          .filter((result) => result.data) // Solo procesamos resultados con datos.
+          .map((result) => {
+            // Gracias al filtro anterior, TypeScript ahora sabe que result.data no es nulo aquí.
+            return supabaseClient.storage
+              .from(bucketName)
+              .getPublicUrl(result.data.path).data.publicUrl;
+          });
       };
 
-      // Procesa todos los campos de archivo concurrentemente.
       const uploadTasks = Object.keys(files).map((fieldName) =>
         uploadMultipleFiles(fieldName, files[fieldName]).then((urls) => {
           if (urls.length > 0) {
@@ -182,9 +190,7 @@ export class MailService {
 
       console.log('URLs de archivos KYC generadas:', fileUrls);
 
-      // Prepara el objeto final para la inserción en la base de datos.
       const dataToInsert = {
-        // Mapeo de todos los campos del formulario KYC
         nombre: datosSolicitud.nombre,
         apellido: datosSolicitud.apellido,
         numero_documento: datosSolicitud.numero_documento,
@@ -199,11 +205,9 @@ export class MailService {
         dj_origen_fondos: datosSolicitud.dj_origen_fondos,
         fondos_licitos: datosSolicitud.fondos_licitos === 'on',
         pep_status: datosSolicitud.pep_status,
-        // Inclusión de las URLs de los archivos
         ...fileUrls,
       };
 
-      // Inserta el registro en la tabla 'solicitudes_token'.
       const { data, error } = await supabaseClient
         .from('solicitudes_token')
         .insert([dataToInsert])
