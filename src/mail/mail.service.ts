@@ -28,12 +28,12 @@ export class MailService {
     files: { [fieldname: string]: Express.Multer.File[] },
   ) {
     console.log('Servicio: Procesando registro de empresa KYB...');
-    const supabaseClient = this.supabaseService.getClient();
-    const bucketName = 'registros-empresas'; // Bucket de Supabase Storage para este formulario.
-    const fileUrls: { [key: string]: string[] } = {};
+    const supabaseClient = this.supabase.getClient();
+    const bucketName = 'registros-empresas';
+
+    const fileUrls = {};
 
     try {
-      // Función auxiliar para subir un array de archivos de un campo específico.
       const uploadMultipleFiles = async (
         fieldName: string,
         fileArray: Express.Multer.File[],
@@ -51,23 +51,34 @@ export class MailService {
 
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
+          // --- CORRECCIÓN 1: Verificamos que e.error no sea nulo antes de acceder a .message ---
+          const errorMessages = uploadErrors
+            .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
+            .join(', ');
           console.error(
-            `Error subiendo archivos para ${fieldName}:`,
-            uploadErrors.map((e) => e.error.message),
+            `Error subiendo archivos para el campo ${fieldName}:`,
+            errorMessages,
           );
           throw new InternalServerErrorException(
-            `Fallo al subir archivos para: ${fieldName}`,
+            `No se pudieron subir algunos archivos para: ${fieldName}`,
           );
         }
 
-        return uploadResults.map((result) => {
-          return supabaseClient.storage
-            .from(bucketName)
-            .getPublicUrl(result.data.path).data.publicUrl;
-        });
+        // Obtenemos las URLs públicas para los archivos subidos exitosamente
+        return uploadResults
+          .map((result) => {
+            // --- CORRECCIÓN 2: Verificamos que result.data no sea nulo antes de acceder a .path ---
+            if (result.data) {
+              return supabaseClient.storage
+                .from(bucketName)
+                .getPublicUrl(result.data.path).data.publicUrl;
+            }
+            // Devolvemos una cadena vacía o null si algo sale mal, para evitar errores.
+            return '';
+          })
+          .filter((url) => url); // Filtramos cualquier cadena vacía que pudiera quedar.
       };
 
-      // Procesa todos los campos de archivo concurrentemente.
       const uploadTasks = Object.keys(files).map((fieldName) =>
         uploadMultipleFiles(fieldName, files[fieldName]).then((urls) => {
           if (urls.length > 0) {
@@ -79,35 +90,34 @@ export class MailService {
 
       console.log('URLs de archivos generadas:', fileUrls);
 
-      // Prepara el objeto final para la inserción en la base de datos.
       const dataToInsert = {
-        // Mapeo de campos de texto
         nombre_empresa: datosEmpresa.nombre_empresa,
         cuit_empresa: datosEmpresa.cuit_empresa,
         direccion_sede: datosEmpresa.direccion_sede,
         email_empresa: datosEmpresa.email_empresa,
         telefono_empresa: datosEmpresa.telefono_empresa,
         sitio_web: datosEmpresa.sitio_web,
-        // Conversión del valor del checkbox a booleano
         fondos_licitos: datosEmpresa.fondos_licitos === 'on',
-        // Inclusión de todas las URLs de archivos generadas
         ...fileUrls,
       };
 
-      // Inserta el registro en la tabla 'registros_market'.
       const { data, error } = await supabaseClient
         .from('registros_market')
         .insert([dataToInsert])
         .select();
 
       if (error) {
-        console.error('Error de Supabase al insertar registro:', error.message);
+        console.error(
+          'Error de Supabase al insertar registro de empresa:',
+          error.message,
+        );
         throw new InternalServerErrorException(
           'No se pudo guardar el registro en la base de datos.',
         );
       }
 
       console.log('Registro de empresa guardado con éxito:', data[0]);
+
       return {
         message: 'Registro de empresa procesado con éxito!',
         data: data[0],
@@ -116,7 +126,9 @@ export class MailService {
       console.error('Error en procesarRegistroEmpresa:', error);
       throw error instanceof InternalServerErrorException
         ? error
-        : new InternalServerErrorException('Error al procesar el registro.');
+        : new InternalServerErrorException(
+            'Error al procesar el registro de la empresa.',
+          );
     }
   }
 
