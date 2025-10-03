@@ -41,7 +41,6 @@ export class MailController {
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
     FileFieldsInterceptor([
-      // Lista de todos los campos de archivo esperados y el número máximo de archivos por campo.
       { name: 'organigrama', maxCount: 5 },
       { name: 'geolocalizacion', maxCount: 5 },
       { name: 'comprobante_domicilio', maxCount: 5 },
@@ -71,16 +70,27 @@ export class MailController {
   }
 
   /**
-   * @endpoint POST /formularios/solicitud-token
-   * @description Recibe y procesa el formulario de solicitud de tokens de usuarios individuales (KYC).
-   * Este endpoint no maneja archivos directamente, por lo que no necesita un interceptor de archivos.
-   * @param datosSolicitud Objeto que contiene todos los campos del formulario.
+   * @endpoint POST /formularios/kyc-persona-fisica
+   * @description Recibe y procesa el formulario de onboarding de usuarios individuales (KYC).
+   * Maneja tanto datos de texto como la carga de múltiples archivos de documentos.
+   * @param files Objeto que contiene los archivos de documentos.
+   * @param datosSolicitud Objeto que contiene los campos de texto del formulario.
    * @returns Una promesa con el resultado de la operación.
    */
-  @Post('solicitud-token')
+  @Post('kyc-persona-fisica')
   @HttpCode(HttpStatus.CREATED)
-  async recibirSolicitudToken(@Body() datosSolicitud: any) {
-    console.log('Controlador: Recibiendo solicitud de token KYC...');
-    return this.mailService.procesarSolicitudToken(datosSolicitud);
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'documento_identidad', maxCount: 10 },
+      { name: 'comprobante_domicilio_servicio', maxCount: 10 },
+      { name: 'comprobante_domicilio_alternativo', maxCount: 10 },
+    ]),
+  )
+  async recibirSolicitudKyc(
+    @UploadedFiles() files: { [key: string]: Express.Multer.File[] },
+    @Body() datosSolicitud: any,
+  ) {
+    console.log('Controlador: Recibiendo solicitud de onboarding KYC...');
+    return this.mailService.procesarSolicitudKyc(datosSolicitud, files);
   }
 }

@@ -28,12 +28,9 @@ export class MailService {
     files: { [fieldname: string]: Express.Multer.File[] },
   ) {
     console.log('Servicio: Procesando registro de empresa KYB...');
-
-    // con el nombre de la propiedad definida en el constructor.
     const supabaseClient = this.supabaseService.getClient();
     const bucketName = 'registros-empresas';
-
-    const fileUrls = {};
+    const fileUrls: { [key: string]: string[] } = {};
 
     try {
       const uploadMultipleFiles = async (
@@ -54,27 +51,22 @@ export class MailService {
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
           const errorMessages = uploadErrors
-            .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
+            .map((e) => e.error.message)
             .join(', ');
           console.error(
-            `Error subiendo archivos para el campo ${fieldName}:`,
+            `Error subiendo archivos para ${fieldName}:`,
             errorMessages,
           );
           throw new InternalServerErrorException(
-            `No se pudieron subir algunos archivos para: ${fieldName}`,
+            `Fallo al subir archivos para: ${fieldName}`,
           );
         }
 
-        return uploadResults
-          .map((result) => {
-            if (result.data) {
-              return supabaseClient.storage
-                .from(bucketName)
-                .getPublicUrl(result.data.path).data.publicUrl;
-            }
-            return '';
-          })
-          .filter((url) => url);
+        return uploadResults.map((result) => {
+          return supabaseClient.storage
+            .from(bucketName)
+            .getPublicUrl(result.data.path).data.publicUrl;
+        });
       };
 
       const uploadTasks = Object.keys(files).map((fieldName) =>
@@ -105,17 +97,13 @@ export class MailService {
         .select();
 
       if (error) {
-        console.error(
-          'Error de Supabase al insertar registro de empresa:',
-          error.message,
-        );
+        console.error('Error de Supabase al insertar registro:', error.message);
         throw new InternalServerErrorException(
           'No se pudo guardar el registro en la base de datos.',
         );
       }
 
       console.log('Registro de empresa guardado con éxito:', data[0]);
-
       return {
         message: 'Registro de empresa procesado con éxito!',
         data: data[0],
@@ -124,48 +112,106 @@ export class MailService {
       console.error('Error en procesarRegistroEmpresa:', error);
       throw error instanceof InternalServerErrorException
         ? error
-        : new InternalServerErrorException(
-            'Error al procesar el registro de la empresa.',
-          );
+        : new InternalServerErrorException('Error al procesar el registro.');
     }
   }
 
   /**
-   * Procesa el formulario de solicitud de tokens de usuarios individuales (KYC).
-   * Guarda los datos de texto en la tabla 'solicitudes_token'.
+   * Procesa el formulario de onboarding de usuarios individuales (KYC).
+   * Sube los documentos a Supabase Storage y guarda toda la información en la tabla 'solicitudes_token'.
    * @param datosSolicitud Objeto con los datos de texto del formulario.
+   * @param files Objeto con los archivos de documentos subidos.
    * @returns Un objeto con un mensaje de éxito y los datos guardados.
    */
-  async procesarSolicitudToken(datosSolicitud: any) {
-    console.log(
-      'Servicio: Procesando solicitud de token KYC...',
-      datosSolicitud,
-    );
-    const tableName = 'solicitudes_token';
+  async procesarSolicitudKyc(
+    datosSolicitud: any,
+    files: { [fieldname: string]: Express.Multer.File[] },
+  ) {
+    console.log('Servicio: Procesando solicitud de onboarding KYC...');
     const supabaseClient = this.supabaseService.getClient();
+    const bucketName = 'kyc-documentos-usuarios'; // Bucket de destino para este formulario.
+    const fileUrls: { [key: string]: string[] } = {};
 
     try {
+      // Reutilizamos la misma función auxiliar para subir archivos.
+      const uploadMultipleFiles = async (
+        fieldName: string,
+        fileArray: Express.Multer.File[],
+      ): Promise<string[]> => {
+        if (!fileArray || fileArray.length === 0) return [];
+
+        const uploadPromises = fileArray.map((file, index) => {
+          const filePath = `public/${fieldName}/${Date.now()}-${index}-${file.originalname}`;
+          return supabaseClient.storage
+            .from(bucketName)
+            .upload(filePath, file.buffer, { contentType: file.mimetype });
+        });
+
+        const uploadResults = await Promise.all(uploadPromises);
+
+        const uploadErrors = uploadResults.filter((result) => result.error);
+        if (uploadErrors.length > 0) {
+          const errorMessages = uploadErrors
+            .map((e) => e.error.message)
+            .join(', ');
+          console.error(
+            `Error subiendo archivos para ${fieldName}:`,
+            errorMessages,
+          );
+          throw new InternalServerErrorException(
+            `Fallo al subir archivos para: ${fieldName}`,
+          );
+        }
+
+        return uploadResults.map((result) => {
+          return supabaseClient.storage
+            .from(bucketName)
+            .getPublicUrl(result.data.path).data.publicUrl;
+        });
+      };
+
+      // Procesa todos los campos de archivo concurrentemente.
+      const uploadTasks = Object.keys(files).map((fieldName) =>
+        uploadMultipleFiles(fieldName, files[fieldName]).then((urls) => {
+          if (urls.length > 0) {
+            fileUrls[`${fieldName}_urls`] = urls;
+          }
+        }),
+      );
+      await Promise.all(uploadTasks);
+
+      console.log('URLs de archivos KYC generadas:', fileUrls);
+
+      // Prepara el objeto final para la inserción en la base de datos.
+      const dataToInsert = {
+        // Mapeo de todos los campos del formulario KYC
+        nombre: datosSolicitud.nombre,
+        apellido: datosSolicitud.apellido,
+        numero_documento: datosSolicitud.numero_documento,
+        fecha_nacimiento: datosSolicitud.fecha_nacimiento,
+        nacionalidad: datosSolicitud.nacionalidad,
+        direccion: datosSolicitud.direccion,
+        email: datosSolicitud.email,
+        telefono: datosSolicitud.telefono,
+        fuente_ingresos: datosSolicitud.fuente_ingresos,
+        limite_operaciones: datosSolicitud.limite_operaciones,
+        justificacion_servicios: datosSolicitud.justificacion_servicios,
+        dj_origen_fondos: datosSolicitud.dj_origen_fondos,
+        fondos_licitos: datosSolicitud.fondos_licitos === 'on',
+        pep_status: datosSolicitud.pep_status,
+        // Inclusión de las URLs de los archivos
+        ...fileUrls,
+      };
+
+      // Inserta el registro en la tabla 'solicitudes_token'.
       const { data, error } = await supabaseClient
-        .from(tableName)
-        .insert([
-          {
-            nombre: datosSolicitud.nombre,
-            apellido: datosSolicitud.apellido,
-            cuit_cuil: datosSolicitud.cuit_cuil,
-            domicilio: datosSolicitud.domicilio,
-            email: datosSolicitud.email,
-            telefono: datosSolicitud.telefono,
-            capital_inversion: datosSolicitud.capital_inversion,
-            motivo_interes: datosSolicitud.motivo_interes,
-            experiencia_inversor: datosSolicitud.experiencia_inversor,
-            comentarios: datosSolicitud.comentarios,
-          },
-        ])
+        .from('solicitudes_token')
+        .insert([dataToInsert])
         .select();
 
       if (error) {
         console.error(
-          'Error de Supabase al insertar solicitud:',
+          'Error de Supabase al insertar solicitud KYC:',
           error.message,
         );
         throw new InternalServerErrorException(
@@ -173,13 +219,13 @@ export class MailService {
         );
       }
 
-      console.log('Solicitud de token guardada con éxito:', data[0]);
+      console.log('Solicitud KYC guardada con éxito:', data[0]);
       return {
-        message: 'Solicitud de token recibida y guardada con éxito!',
+        message: 'Solicitud de onboarding recibida y guardada con éxito!',
         data: data[0],
       };
     } catch (error) {
-      console.error('Error inesperado en procesarSolicitudToken:', error);
+      console.error('Error inesperado en procesarSolicitudKyc:', error);
       throw new InternalServerErrorException(
         'Ocurrió un error inesperado al procesar la solicitud.',
       );
