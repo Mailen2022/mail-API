@@ -17,11 +17,6 @@ export class MailService {
 
   /**
    * Procesa el formulario de registro de empresas (KYB).
-   * Sube todos los archivos a Supabase Storage y guarda los datos de texto junto con las URLs
-   * de los archivos en la tabla 'registros_market'.
-   * @param datosEmpresa Objeto con los datos de texto del formulario.
-   * @param files Objeto con los archivos subidos.
-   * @returns Un objeto con un mensaje de éxito y los datos guardados.
    */
   async procesarRegistroEmpresa(
     datosEmpresa: any,
@@ -50,7 +45,6 @@ export class MailService {
 
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
-          // FIX 1: Manejo seguro del posible error nulo.
           const errorMessages = uploadErrors
             .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
             .join(', ');
@@ -63,15 +57,22 @@ export class MailService {
           );
         }
 
-        // FIX 2: Filtramos para asegurarnos de que 'result.data' no es nulo antes de mapear.
-        return uploadResults
-          .filter((result) => result.data) // Solo procesamos resultados con datos.
-          .map((result) => {
-            // Gracias al filtro anterior, TypeScript ahora sabe que result.data no es nulo aquí.
-            return supabaseClient.storage
-              .from(bucketName)
-              .getPublicUrl(result.data.path).data.publicUrl;
-          });
+        // FIX: Lógica de mapeo y filtrado a prueba de nulos.
+        return (
+          uploadResults
+            .map((result) => {
+              // Primero, comprobamos si 'result.data' existe.
+              if (result.data) {
+                return supabaseClient.storage
+                  .from(bucketName)
+                  .getPublicUrl(result.data.path).data.publicUrl;
+              }
+              // Si no existe, devolvemos null explícitamente.
+              return null;
+            })
+            // Luego, filtramos todos los valores nulos del array final.
+            .filter((url): url is string => url !== null)
+        );
       };
 
       const uploadTasks = Object.keys(files).map((fieldName) =>
@@ -123,10 +124,6 @@ export class MailService {
 
   /**
    * Procesa el formulario de onboarding de usuarios individuales (KYC).
-   * Sube los documentos a Supabase Storage y guarda toda la información en la tabla 'solicitudes_token'.
-   * @param datosSolicitud Objeto con los datos de texto del formulario.
-   * @param files Objeto con los archivos de documentos subidos.
-   * @returns Un objeto con un mensaje de éxito y los datos guardados.
    */
   async procesarSolicitudKyc(
     datosSolicitud: any,
@@ -155,7 +152,6 @@ export class MailService {
 
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
-          // FIX 3: Manejo seguro del posible error nulo.
           const errorMessages = uploadErrors
             .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
             .join(', ');
@@ -168,15 +164,17 @@ export class MailService {
           );
         }
 
-        // FIX 4: Filtramos para asegurarnos de que 'result.data' no es nulo antes de mapear.
+        // FIX: Lógica de mapeo y filtrado a prueba de nulos (aplicada aquí también).
         return uploadResults
-          .filter((result) => result.data) // Solo procesamos resultados con datos.
           .map((result) => {
-            // Gracias al filtro anterior, TypeScript ahora sabe que result.data no es nulo aquí.
-            return supabaseClient.storage
-              .from(bucketName)
-              .getPublicUrl(result.data.path).data.publicUrl;
-          });
+            if (result.data) {
+              return supabaseClient.storage
+                .from(bucketName)
+                .getPublicUrl(result.data.path).data.publicUrl;
+            }
+            return null;
+          })
+          .filter((url): url is string => url !== null);
       };
 
       const uploadTasks = Object.keys(files).map((fieldName) =>
