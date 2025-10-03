@@ -1,4 +1,9 @@
-// src/mail/mail.controller.ts
+/**
+ * @file mail.controller.ts
+ * @description Define los endpoints de la API para la recepción de formularios.
+ * Este controlador actúa como la puerta de entrada para las peticiones HTTP,
+ * validando la entrada inicial y delegando la lógica de negocio al MailService.
+ */
 
 import {
   Controller,
@@ -9,85 +14,73 @@ import {
   UseInterceptors,
   UploadedFiles,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express'; // Usamos FileFieldsInterceptor para múltiples campos
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { MailService } from './mail.service';
 
+/**
+ * @class MailController
+ * @brief Gestiona todas las rutas bajo el prefijo '/formularios'.
+ */
 @Controller('formularios')
 export class MailController {
+  /**
+   * Inyecta el MailService para acceder a la lógica de negocio.
+   * @param mailService Instancia de MailService gestionada por NestJS.
+   */
   constructor(private readonly mailService: MailService) {}
 
-  @Post('solicitud-token') // Nueva ruta: /formularios/solicitud-token
+  /**
+   * @endpoint POST /formularios/registro-empresa
+   * @description Recibe y procesa el formulario de registro de empresas (KYB).
+   * Utiliza FileFieldsInterceptor para manejar múltiples campos de carga de archivos.
+   * @param files Objeto que contiene todos los archivos subidos, clasificados por campo.
+   * @param datosEmpresa Objeto que contiene todos los campos de texto del formulario.
+   * @returns Una promesa con el resultado de la operación.
+   */
+  @Post('registro-empresa')
   @HttpCode(HttpStatus.CREATED)
-  // Como este formulario no envía archivos, no necesitamos un interceptor.
-  // Solo recibimos los datos del cuerpo de la petición.
-  async recibirSolicitudToken(@Body() datosSolicitud: any) {
-    // Llamamos al nuevo método que creamos en el servicio.
-    return this.mailService.procesarSolicitudToken(datosSolicitud);
-  }
-
-  // ====================================================================
-  // === NUEVO ENDPOINT PARA EL REGISTRO DE EMPRESAS EN EL MARKET ===
-  // ====================================================================
-  @Post('registro-empresa') // Nueva ruta: /formularios/registro-empresa
-  @HttpCode(HttpStatus.CREATED)
-  // 1. Configuramos el interceptor para que acepte TODOS los campos de archivo del nuevo formulario.
-  //    Es crucial que los 'name' coincidan con los del HTML.
   @UseInterceptors(
     FileFieldsInterceptor([
-      { name: 'logo_empresa', maxCount: 1 },
-      { name: 'estatuto', maxCount: 1 },
-      { name: 'actas_asamblea', maxCount: 1 },
-      { name: 'libro_socios', maxCount: 1 },
-      { name: 'declaracion_jurada', maxCount: 1 },
-      { name: 'ultimo_balance', maxCount: 1 },
+      // Lista de todos los campos de archivo esperados y el número máximo de archivos por campo.
+      { name: 'organigrama', maxCount: 5 },
+      { name: 'geolocalizacion', maxCount: 5 },
+      { name: 'comprobante_domicilio', maxCount: 5 },
+      { name: 'constancia_domicilio_fiscal', maxCount: 5 },
+      { name: 'estatuto_social', maxCount: 5 },
+      { name: 'acta_constitucion', maxCount: 5 },
+      { name: 'ultima_acta_designacion', maxCount: 5 },
+      { name: 'comprobante_cuit', maxCount: 5 },
+      { name: 'constancia_inscripcion', maxCount: 5 },
+      { name: 'estados_financieros', maxCount: 5 },
+      { name: 'constancia_bancaria', maxCount: 5 },
+      { name: 'libro_acciones', maxCount: 5 },
+      { name: 'docs_identidad_socios', maxCount: 10 },
+      { name: 'manifestacion_bienes', maxCount: 10 },
+      { name: 'dni_representantes', maxCount: 5 },
+      { name: 'poder_notarial', maxCount: 5 },
     ]),
   )
   async registrarEmpresa(
-    // 2. El decorador @UploadedFiles() recogerá todos los archivos en un objeto.
-    @UploadedFiles()
-    files: {
-      logo_empresa?: Express.Multer.File[];
-      estatuto?: Express.Multer.File[];
-      actas_asamblea?: Express.Multer.File[];
-      libro_socios?: Express.Multer.File[];
-      declaracion_jurada?: Express.Multer.File[];
-      ultimo_balance?: Express.Multer.File[];
-    },
-    // 3. El decorador @Body() recogerá todos los campos de texto.
+    @UploadedFiles() files: { [key: string]: Express.Multer.File[] },
     @Body() datosEmpresa: any,
   ) {
-    console.log('Controlador: Recibiendo registro de empresa...');
-    // 4. Delegamos toda la lógica compleja al nuevo método del servicio.
+    console.log(
+      'Controlador: Recibiendo solicitud de registro de empresa KYB...',
+    );
     return this.mailService.procesarRegistroEmpresa(datosEmpresa, files);
   }
 
-  @Post('contacto')
+  /**
+   * @endpoint POST /formularios/solicitud-token
+   * @description Recibe y procesa el formulario de solicitud de tokens de usuarios individuales (KYC).
+   * Este endpoint no maneja archivos directamente, por lo que no necesita un interceptor de archivos.
+   * @param datosSolicitud Objeto que contiene todos los campos del formulario.
+   * @returns Una promesa con el resultado de la operación.
+   */
+  @Post('solicitud-token')
   @HttpCode(HttpStatus.CREATED)
-  // 1. Usamos el interceptor para decirle a NestJS qué campos de archivo esperar.
-  // Usamos FileFieldsInterceptor porque son campos con nombres diferentes ('logo', 'estatuto').
-  @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'logo', maxCount: 1 },
-      { name: 'estatuto', maxCount: 1 },
-    ]),
-  )
-  // 2. La firma del método ahora recibe dos argumentos decorados:
-  //    - @UploadedFiles() para los archivos.
-  //    - @Body() para los campos de texto.
-  async recibirDatos(
-    @UploadedFiles()
-    files: { logo?: Express.Multer.File[]; estatuto?: Express.Multer.File[] },
-    @Body() datosDeTexto: any,
-  ) {
-    // Imprimimos en consola para depurar y verificar que todo llega correctamente.
-    console.log('Controlador: Datos de texto recibidos ->', datosDeTexto);
-    console.log('Controlador: Archivos recibidos ->', files);
-
-    // 3. Delegamos el trabajo al servicio, pero ahora le pasamos tanto los datos de texto
-    //    como los archivos para que el servicio se encargue de la lógica completa
-    //    (ej. subir archivos a Supabase Storage, luego guardar todo en la base de datos).
-    //
-    //    NOTA: Necesitaremos crear este nuevo método 'procesarFormularioConArchivos' en tu MailService.
-    return this.mailService.procesarFormularioConArchivos(datosDeTexto, files);
+  async recibirSolicitudToken(@Body() datosSolicitud: any) {
+    console.log('Controlador: Recibiendo solicitud de token KYC...');
+    return this.mailService.procesarSolicitudToken(datosSolicitud);
   }
 }
