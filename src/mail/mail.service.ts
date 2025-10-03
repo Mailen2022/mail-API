@@ -28,7 +28,9 @@ export class MailService {
     files: { [fieldname: string]: Express.Multer.File[] },
   ) {
     console.log('Servicio: Procesando registro de empresa KYB...');
-    const supabaseClient = this.supabase.getClient();
+
+    // con el nombre de la propiedad definida en el constructor.
+    const supabaseClient = this.supabaseService.getClient();
     const bucketName = 'registros-empresas';
 
     const fileUrls = {};
@@ -51,7 +53,6 @@ export class MailService {
 
         const uploadErrors = uploadResults.filter((result) => result.error);
         if (uploadErrors.length > 0) {
-          // --- CORRECCIÓN 1: Verificamos que e.error no sea nulo antes de acceder a .message ---
           const errorMessages = uploadErrors
             .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
             .join(', ');
@@ -64,19 +65,16 @@ export class MailService {
           );
         }
 
-        // Obtenemos las URLs públicas para los archivos subidos exitosamente
         return uploadResults
           .map((result) => {
-            // --- CORRECCIÓN 2: Verificamos que result.data no sea nulo antes de acceder a .path ---
             if (result.data) {
               return supabaseClient.storage
                 .from(bucketName)
                 .getPublicUrl(result.data.path).data.publicUrl;
             }
-            // Devolvemos una cadena vacía o null si algo sale mal, para evitar errores.
             return '';
           })
-          .filter((url) => url); // Filtramos cualquier cadena vacía que pudiera quedar.
+          .filter((url) => url);
       };
 
       const uploadTasks = Object.keys(files).map((fieldName) =>
@@ -143,16 +141,14 @@ export class MailService {
       'Servicio: Procesando solicitud de token KYC...',
       datosSolicitud,
     );
-    const tableName = 'solicitudes_token'; // Tabla de destino para este formulario.
+    const tableName = 'solicitudes_token';
     const supabaseClient = this.supabaseService.getClient();
 
     try {
-      // Inserta el registro en la tabla 'solicitudes_token'.
       const { data, error } = await supabaseClient
         .from(tableName)
         .insert([
           {
-            // Mapeo de todos los campos del formulario KYC
             nombre: datosSolicitud.nombre,
             apellido: datosSolicitud.apellido,
             cuit_cuil: datosSolicitud.cuit_cuil,
@@ -163,7 +159,6 @@ export class MailService {
             motivo_interes: datosSolicitud.motivo_interes,
             experiencia_inversor: datosSolicitud.experiencia_inversor,
             comentarios: datosSolicitud.comentarios,
-            // Aquí irían los campos del nuevo formulario KYC si los tuviera
           },
         ])
         .select();
