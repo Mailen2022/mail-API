@@ -189,6 +189,7 @@ export class MailService {
       console.log('URLs de archivos KYC generadas:', fileUrls);
 
       const dataToInsert = {
+        // Información Personal
         nombre: datosSolicitud.nombre,
         apellido: datosSolicitud.apellido,
         numero_documento: datosSolicitud.numero_documento,
@@ -197,12 +198,16 @@ export class MailService {
         direccion: datosSolicitud.direccion,
         email: datosSolicitud.email,
         telefono: datosSolicitud.telefono,
+        // Información Financiera
         fuente_ingresos: datosSolicitud.fuente_ingresos,
+        // Perfil Transaccional
         limite_operaciones: datosSolicitud.limite_operaciones,
         justificacion_servicios: datosSolicitud.justificacion_servicios,
+        // Declaraciones
         dj_origen_fondos: datosSolicitud.dj_origen_fondos,
         fondos_licitos: datosSolicitud.fondos_licitos === 'on',
         pep_status: datosSolicitud.pep_status,
+        // Inclusión de las URLs de los archivos
         ...fileUrls,
       };
 
