@@ -1,30 +1,39 @@
 /**
  * @file mail.service.ts
  * @description Contiene la lógica de negocio para procesar los datos de los formularios.
- * Este servicio se comunica con Supabase para subir archivos y guardar datos en la base de datos.
+ * Este servicio se comunica con Supabase para subir archivos y guardar datos,
+ * y luego delega el envío de notificaciones por email al EmailService.
  */
 
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
+import { EmailService } from '../email/email.service'; // Importamos el servicio de email
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name);
   private supabaseClient: SupabaseClient;
 
   /**
-   * Inyecta el SupabaseService y obtiene una instancia del cliente de Supabase
-   * para ser utilizada a lo largo del servicio.
-   * @param supabaseService Instancia de SupabaseService.
+   * Inyecta los servicios necesarios y obtiene una instancia del cliente de Supabase.
+   * @param supabaseService Instancia de SupabaseService para la conexión a la BD.
+   * @param emailService Instancia de EmailService para el envío de correos.
    */
-  constructor(private readonly supabaseService: SupabaseService) {
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly emailService: EmailService, // Inyectamos el EmailService
+  ) {
     this.supabaseClient = this.supabaseService.getClient();
   }
 
   /**
    * Procesa el formulario de registro de empresas (KYB).
-   * Sube todos los archivos a Supabase Storage y guarda los datos de texto junto con las URLs
-   * de los archivos en la tabla 'registros_market'.
+   * Sube archivos, guarda el registro y envía un email de notificación.
    * @param datosEmpresa Objeto con los datos de texto del formulario.
    * @param files Objeto con los archivos subidos.
    * @returns Un objeto con un mensaje de éxito y los datos guardados.
@@ -33,12 +42,12 @@ export class MailService {
     datosEmpresa: any,
     files: { [fieldname: string]: Express.Multer.File[] },
   ) {
-    console.log('Servicio: Procesando registro de empresa KYB...');
+    this.logger.log('Procesando registro de empresa KYB...');
     const bucketName = 'registros-empresas';
     const fileUrls: { [key: string]: string[] } = {};
 
     try {
-      // Sube todos los archivos concurrentemente utilizando el método privado reutilizable.
+      // Sube todos los archivos concurrentemente.
       const uploadTasks = Object.keys(files).map((fieldName) =>
         this.uploadMultipleFiles(fieldName, files[fieldName], bucketName).then(
           (urls) => {
@@ -50,9 +59,9 @@ export class MailService {
       );
       await Promise.all(uploadTasks);
 
-      console.log('URLs de archivos generadas:', fileUrls);
+      this.logger.log('URLs de archivos de empresa generadas:', fileUrls);
 
-      // Prepara el objeto final para la inserción en la base de datos.
+      // Prepara el objeto de datos para la inserción.
       const dataToInsert = {
         nombre_empresa: datosEmpresa.nombre_empresa,
         cuit_empresa: datosEmpresa.cuit_empresa,
@@ -65,25 +74,35 @@ export class MailService {
       };
 
       // Inserta el registro en la tabla 'registros_market'.
-      const { data, error } = await this.supabaseClient
+      const { data: savedData, error } = await this.supabaseClient
         .from('registros_market')
         .insert([dataToInsert])
         .select();
 
       if (error) {
-        console.error('Error de Supabase al insertar registro:', error.message);
+        this.logger.error(
+          `Error de Supabase al insertar registro: ${error.message}`,
+        );
         throw new InternalServerErrorException(
           'No se pudo guardar el registro en la base de datos.',
         );
       }
 
-      console.log('Registro de empresa guardado con éxito:', data[0]);
+      this.logger.log('Registro de empresa guardado con éxito:', savedData[0]);
+
+      // Tras el éxito, delega el envío del email al EmailService.
+      await this.emailService.enviarEmailBienvenida(
+        datosEmpresa.email_empresa,
+        datosEmpresa.nombre_empresa,
+        'https://market.blockey.tech/siguiente-paso-empresas', // URL para empresas
+      );
+
       return {
         message: 'Registro de empresa procesado con éxito!',
-        data: data[0],
+        data: savedData[0],
       };
     } catch (error) {
-      console.error('Error en procesarRegistroEmpresa:', error);
+      this.logger.error('Error en procesarRegistroEmpresa:', error.stack);
       throw error instanceof InternalServerErrorException
         ? error
         : new InternalServerErrorException('Error al procesar el registro.');
@@ -92,7 +111,7 @@ export class MailService {
 
   /**
    * Procesa el formulario de onboarding de usuarios individuales (KYC).
-   * Sube los documentos a Supabase Storage y guarda toda la información en la tabla 'solicitudes_token'.
+   * Sube documentos, guarda la solicitud y envía un email de notificación.
    * @param datosSolicitud Objeto con los datos de texto del formulario.
    * @param files Objeto con los archivos de documentos subidos.
    * @returns Un objeto con un mensaje de éxito y los datos guardados.
@@ -101,12 +120,12 @@ export class MailService {
     datosSolicitud: any,
     files: { [fieldname: string]: Express.Multer.File[] },
   ) {
-    console.log('Servicio: Procesando solicitud de onboarding KYC...');
+    this.logger.log('Procesando solicitud de onboarding KYC...');
     const bucketName = 'kyc-documentos-usuarios';
     const fileUrls: { [key: string]: string[] } = {};
 
     try {
-      // Sube todos los archivos concurrentemente utilizando el mismo método privado reutilizable.
+      // Sube todos los archivos concurrentemente.
       const uploadTasks = Object.keys(files).map((fieldName) =>
         this.uploadMultipleFiles(fieldName, files[fieldName], bucketName).then(
           (urls) => {
@@ -118,9 +137,9 @@ export class MailService {
       );
       await Promise.all(uploadTasks);
 
-      console.log('URLs de archivos KYC generadas:', fileUrls);
+      this.logger.log('URLs de archivos KYC generadas:', fileUrls);
 
-      // Prepara el objeto final para la inserción en la base de datos.
+      // Prepara el objeto de datos para la inserción.
       const dataToInsert = {
         nombre: datosSolicitud.nombre,
         apellido: datosSolicitud.apellido,
@@ -139,28 +158,39 @@ export class MailService {
       };
 
       // Inserta el registro en la tabla 'solicitudes_token'.
-      const { data, error } = await this.supabaseClient
+      const { data: savedData, error } = await this.supabaseClient
         .from('solicitudes_token')
         .insert([dataToInsert])
         .select();
 
       if (error) {
-        console.error(
-          'Error de Supabase al insertar solicitud KYC:',
-          error.message,
+        this.logger.error(
+          `Error de Supabase al insertar solicitud KYC: ${error.message}`,
         );
         throw new InternalServerErrorException(
           'No se pudo guardar la solicitud en la base de datos.',
         );
       }
 
-      console.log('Solicitud KYC guardada con éxito:', data[0]);
+      this.logger.log('Solicitud KYC guardada con éxito:', savedData[0]);
+
+      // Tras el éxito, delega el envío del email al EmailService.
+      const nombreCompleto = `${datosSolicitud.nombre} ${datosSolicitud.apellido}`;
+      await this.emailService.enviarEmailBienvenida(
+        datosSolicitud.email,
+        nombreCompleto,
+        'https://market.blockey.tech/siguiente-paso-usuarios', // URL para usuarios
+      );
+
       return {
         message: 'Solicitud de onboarding recibida y guardada con éxito!',
-        data: data[0],
+        data: savedData[0],
       };
     } catch (error) {
-      console.error('Error inesperado en procesarSolicitudKyc:', error);
+      this.logger.error(
+        'Error inesperado en procesarSolicitudKyc:',
+        error.stack,
+      );
       throw new InternalServerErrorException(
         'Ocurrió un error inesperado al procesar la solicitud.',
       );
@@ -183,39 +213,32 @@ export class MailService {
   ): Promise<string[]> {
     if (!fileArray || fileArray.length === 0) return [];
 
-    // Mapea cada archivo a una promesa de subida.
     const uploadPromises = fileArray.map((file, index) => {
-      // Sanitiza el nombre del archivo para eliminar caracteres no válidos.
       const sanitizedFileName = file.originalname.replace(
         /[^a-zA-Z0-9.\-_]/g,
         '_',
       );
       const filePath = `public/${fieldName}/${Date.now()}-${index}-${sanitizedFileName}`;
-
       return this.supabaseClient.storage
         .from(bucketName)
         .upload(filePath, file.buffer, { contentType: file.mimetype });
     });
 
-    // Ejecuta todas las promesas de subida en paralelo para mayor eficiencia.
     const uploadResults = await Promise.all(uploadPromises);
 
-    // Valida los resultados de la subida.
     const uploadErrors = uploadResults.filter((result) => result.error);
     if (uploadErrors.length > 0) {
       const errorMessages = uploadErrors
         .map((e) => (e.error ? e.error.message : 'Unknown upload error'))
         .join(', ');
-      console.error(
-        `Error subiendo archivos para ${fieldName}:`,
-        errorMessages,
+      this.logger.error(
+        `Error subiendo archivos para ${fieldName}: ${errorMessages}`,
       );
       throw new InternalServerErrorException(
         `Fallo al subir archivos para: ${fieldName}`,
       );
     }
 
-    // Mapea los resultados exitosos a sus URLs públicas.
     return uploadResults
       .map((result) => {
         if (result.data) {
