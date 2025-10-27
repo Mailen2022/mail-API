@@ -133,7 +133,6 @@ export class MailService {
         fuente_ingresos: datosSolicitud.fuente_ingresos,
         limite_operaciones: datosSolicitud.limite_operaciones,
         justificacion_servicios: datosSolicitud.justificacion_servicios,
-        dj_origen_fondos: datosSolicitud.dj_origen_fondos,
         fondos_licitos: datosSolicitud.fondos_licitos === 'on',
         pep_status: datosSolicitud.pep_status,
         ...fileUrls,
