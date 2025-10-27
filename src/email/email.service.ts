@@ -54,7 +54,7 @@ export class EmailService {
     linkSiguientePaso: string,
   ): Promise<void> {
     // Define la dirección de correo del remitente. Debe ser una identidad verificada en SendGrid.
-    const fromAddress = 'tu-email-verificado@blockey.tech'; // <-- ¡IMPORTANTE! Reemplazar con tu email verificado.
+    const fromAddress = 'info@blockey.tech'; // <-- ¡IMPORTANTE! Reemplazar con tu email verificado.
 
     // Construye el objeto del mensaje para la API de SendGrid.
     const msg = {
