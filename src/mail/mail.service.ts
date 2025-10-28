@@ -94,7 +94,7 @@ export class MailService {
       await this.emailService.enviarEmailBienvenida(
         datosEmpresa.email_empresa,
         datosEmpresa.nombre_empresa,
-        'https://market.blockey.tech/siguiente-paso-empresas', // URL para empresas
+        'https://in.sumsub.com/websdk/p/sbx_uni_Oo2BRqbAPWTaOr0X', // URL para empresas
       );
 
       return {
@@ -179,7 +179,7 @@ export class MailService {
       await this.emailService.enviarEmailBienvenida(
         datosSolicitud.email,
         nombreCompleto,
-        'https://market.blockey.tech/siguiente-paso-usuarios', // URL para usuarios
+        'https://in.sumsub.com/websdk/p/sbx_uni_Oo2BRqbAPWTaOr0X', // URL para usuarios
       );
 
       return {
